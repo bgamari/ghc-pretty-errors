@@ -11,7 +11,7 @@ This document explores a variety of solutions for incorporating rich error messa
 
 # Pretty-printer with point annotations
 
-See the [proposal](https://github.com/bgamari/ghc-proposals/tree/rich-errors-proposal).
+See the [proposal](https://github.com/bgamari/ghc-proposals/blob/rich-errors-proposal/proposals/0000-rich-errors-proposal.rst).
 
 ## Pros
 
