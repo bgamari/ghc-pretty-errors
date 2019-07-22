@@ -1,0 +1,119 @@
+---
+title: Rich errors messages in GHC
+---
+ 
+# Pretty-printer with point annotations
+
+See the [proposal](https://github.com/bgamari/ghc-proposals/tree/rich-errors-proposal).
+
+## Pros
+
+ * Relatively low implementation and maintenance effort
+ * Allows us to realize any number of design points on the spectrum from plain
+   text errors (the status quo) to an explicit ADT-of-errors (discussed below)
+ * Easily allows errors to be built up compositionally
+
+## Cons
+
+ * Ambiguity regarding how to analyze documents
+ * Still very presentation-centric
+
+
+# Pretty-printer with scoped annotations
+
+This is the approach used by Idris (as described in [A pretty-printer that says what it means](https://wiki.haskell.org/wikiupload/4/4c/Hiw-2015-david-christiansen.pdf)).
+
+## Pros
+
+ * Very low implementation and maintenance effort
+ * Proven to be useful in Idris's rich REPL
+ 
+## Cons
+
+ * Very presentation-centric
+ * Not terribly conducive to analysis by external tools
+
+
+# Classic ADT-of-errors approach
+
+Here we define a type defining all of the errors which can possibly be produced
+by GHC. To avoid separating the type definition and its rendering from the
+point where we emit it, we define a type for each error alongside the point
+where it's produced (e.g. in `TcErrors`). This avoids some of the
+maintenance overhead we worry this approach might otherwise
+incur.
+
+```haskell
+-- We define a sum type of all errors GHC can throw
+module GhcErrors where
+
+import TcErrors
+import ... -- other modules which can produce errors
+
+data GhcError = Error1' Error1
+              | ...
+              | GenericError SDoc
+                -- ^ enables us to gradually port the existing SDoc errors to
+                -- the new scheme.
+
+
+-- Where we throw the error we define its structure and textual presentation
+module TcErrors where
+
+import {-# SOURCE #-} GhcErrors
+
+data Error1 = Error1 ...
+
+instance Outputable Error1 where ...
+
+mkError1 :: ... -> TcM GhcError
+mkError1 = do
+  ...
+  return $ Error1' $ Error1 { ... }
+```
+
+
+## Pros
+
+ * It's clear what errors can be produced
+
+## Cons
+
+ * Import cycles. Either `GhcErrors` or `TcErrors` et al. will require an
+   `hs-boot` file due to the cyclic imports. 
+
+
+
+
+# A more dynamic approach
+
+I suspect the import cycles above are nearly a deal-breaker. To avoid them we
+can go for a slightly more dynamic approach, taking inspiration from our
+extensible exceptions mechanism:
+
+```haskell
+module GhcErrors where
+
+class (Typeable a, Outputable a) => IsError a
+
+data GhcError where
+  GhcError :: forall a. (IsError a) => a -> GhcError
+
+
+--
+module TcErrors where
+
+data Error1 = Error1 ...
+
+instance Outputable Error1 where ...
+instance IsError Error1
+
+mkError1 :: ... -> TcM GhcError
+```
+
+## Pros
+
+## Cons
+
+ * It's slightly less obvious what 
+
