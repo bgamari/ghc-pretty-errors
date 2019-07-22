@@ -1,7 +1,14 @@
 ---
 title: Rich errors messages in GHC
 ---
- 
+
+This document explores a variety of solutions for incorporating rich error message support into GHC. There are several motivations for this work:
+
+ * Prettier REPL output (e.g. highlight all mentions of `id` in green and, all types in purple, and all kinds in bold typeface).
+ * Place the "squiggly red lines" support for error reporting provided by most Haskell IDEs on a more solid foundation
+ * Enable automated refactoring tasks (e.g. instead of GHC saying "Use GADTs or TypeFamilies to permit this", the IDE should be able to prompt the user to do so in an automated manner)
+ * Allow GHC to perform various expensive analyses (e.g. computing hole fits) to be performed asynchronously or on demand
+
 # Pretty-printer with point annotations
 
 See the [proposal](https://github.com/bgamari/ghc-proposals/tree/rich-errors-proposal).
@@ -47,10 +54,10 @@ incur.
 -- We define a sum type of all errors GHC can throw
 module GhcErrors where
 
-import TcErrors
+import TcErrors 
 import ... -- other modules which can produce errors
 
-data GhcError = Error1' Error1
+data GhcError = TcError' TcError
               | ...
               | GenericError SDoc
                 -- ^ enables us to gradually port the existing SDoc errors to
@@ -62,26 +69,40 @@ module TcErrors where
 
 import {-# SOURCE #-} GhcErrors
 
-data Error1 = Error1 ...
+data TcError = TyVarEqError' Error1
+             | ...
 
-instance Outputable Error1 where ...
+instance Outputable TcError where
+    ppr (Error1' e) = ppr e
+    ...
 
-mkError1 :: ... -> TcM GhcError
-mkError1 = do
+...
+
+-- In an attempt to minimize the maintenance overhead incurred by this change,
+-- we define the individual errors (e.g. type variable equality error) as
+-- separate types rather than as constructors of TcError
+-- such that we can place their definitions and Outputable instances next to
+-- the place where they are produced.
+data TyVarEqError = TyVarEqError ...
+
+instance Outputable TyVarEqError where ...
+
+mkTyVarEqErr :: ... -> TcM GhcError
+mkTyVarEqErr = do
   ...
-  return $ Error1' $ Error1 { ... }
+  return $ TcError' $ TyVarEqError' $ TyVarEqError { ... }
 ```
 
 
 ## Pros
 
- * It's clear what errors can be produced
+ * It's clear what errors can be produced and what information they carry
 
 ## Cons
 
  * Import cycles. Either `GhcErrors` or `TcErrors` et al. will require an
    `hs-boot` file due to the cyclic imports. 
-
+ * Maintenance overhead: a lot of words are spent enumerating the types of errors that GHC can throw (e.g. defining the `GhcError`, `TcError`, and `TyVarEqError` types).
 
 
 
@@ -113,7 +134,9 @@ mkError1 :: ... -> TcM GhcError
 
 ## Pros
 
+ * We eliminate much of the maintenance overhead associated with defining the error sum types.
+ 
 ## Cons
 
  * It's slightly less obvious what 
-
+ * Consumption requires dynamic type comparisons.
